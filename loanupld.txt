@@ -1,0 +1,93 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. LOANUPLD.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 WSS-ERR-MSG.
+           05 WS-ERR-MSG.
+               10 WS-ERR-LEN      PIC S9(4) COMP VALUE 800.
+               10 WS-ERR-TEXT     PIC X(80) OCCURS 10 TIMES.
+           05 WS-ERR-LRECL PIC    S9(4) COMP VALUE 80.
+       01 WSS-SQLCODE PIC S9(3).
+           88 WS-EOT     VALUE +100.
+           88 WS-SUCCESS VALUE +000.
+           EXEC SQL INCLUDE SQLCA END-EXEC.
+           EXEC SQL INCLUDE LOANGEN END-EXEC.
+      *DECLARING THE CURSOR
+           EXEC SQL
+               DECLARE LN1 CURSOR FOR
+               SELECT LOAN_INDICATOR,
+                      NEXT_REPAYMENT_DUE_DATE,
+                      BALANCE_AMOUNT, TOTAL_REPAYMENT_AMOUNT
+               FROM LOAN_DB
+               FOR UPDATE OF LOAN_INDICATOR, NEXT_REPAYMENT_DUE_DATE,
+               BALANCE_AMOUNT
+           END-EXEC.
+       PROCEDURE DIVISION.
+       0000-MAIN-PARA.
+           PERFORM 2000-PROCESS-PARA.
+           PERFORM 9000-TERM-PARA.
+       2000-PROCESS-PARA.
+           PERFORM 2100-OPEN-CURSOR-PARA.
+           PERFORM 2200-FETCH-CURSOR-PARA UNTIL WS-EOT.
+           PERFORM 3000-CLOSE-PARA.
+       2100-OPEN-CURSOR-PARA.
+           EXEC SQL OPEN LN1 END-EXEC.
+           MOVE SQLCODE TO WSS-SQLCODE.
+           EVALUATE TRUE
+               WHEN WS-SUCCESS
+                 DISPLAY 'CURSOR OPENED'
+               WHEN WS-EOT
+                 CONTINUE
+               WHEN OTHER
+                 DISPLAY 'CURSOR NOT OPENED'
+                 DISPLAY 'ERROR STAT: ' SQLCODE
+                 CALL 'DSNTIAR' USING SQLCA, WS-ERR-MSG WS-ERR-LRECL
+                 DISPLAY WS-ERR-MSG
+                 PERFORM 9000-TERM-PARA
+           END-EVALUATE.
+       2200-FETCH-CURSOR-PARA.
+           EXEC SQL FETCH LN1 INTO
+               :LOANDB-LOAN-INDICATOR,
+               :LOANDB-NEXT-REPAYMENT-DUE-DATE,
+               :LOANDB-BALANCE-AMOUNT,
+               :LOANDB-APPLICANT-ID,
+               :LOANDB-TOTAL-REPAYMENT-AMOUNT
+           END-EXEC.
+           MOVE SQLCODE TO WSS-SQLCODE.
+           EVALUATE TRUE
+               WHEN WS-SUCCESS
+                 DISPLAY 'CURSOR FETCHED'
+                 PERFORM 2300-UPDATE-PARA
+               WHEN WS-EOT
+                 CONTINUE
+               WHEN OTHER
+                 DISPLAY 'CURSOR NOT FETCHED'
+                 DISPLAY 'ERROR STATUS :' SQLCODE
+                 CALL 'DSNTIAR' USING SQLCA, WS-ERR-MSG WS-ERR-LRECL
+                 DISPLAY WS-ERR-MSG
+                 PERFORM 9000-TERM-PARA
+           END-EVALUATE.
+       2300-FETCH-LOAN-EXIT.
+           EXIT.
+       3000-CLOSE-PARA.
+           EXEC SQL CLOSE LN1 END-EXEC.
+       2300-UPDATE-PARA.
+           IF LOANDB-BALANCE-AMOUNT < 1000
+               MOVE 'CLOSE' TO LOANDB-LOAN-INDICATOR
+           ELSE IF LOANDB-BALANCE-AMOUNT > 1000
+               MOVE 'OPEN' TO LOANDB-LOAN-INDICATOR
+           END-IF.
+           EXEC SQL
+               UPDATE LOAN_DB
+               SET LOAN_INDICATOR = :LOANDB-LOAN-INDICATOR
+               WHERE APPLICANT_ID = :LOANDB-APPLICANT-ID
+           END-EXEC.
+           EXEC SQL
+               UPDATE LOAN_DB
+               SET BALANCE_AMOUNT = :LOANDB-BALANCE-AMOUNT -
+                                    :LOANDB-TOTAL-REPAYMENT-AMOUNT
+               WHERE APPLICANT_ID = :LOANDB-APPLICANT-ID
+           END-EXEC.
+       9000-TERM-PARA.
+           STOP RUN.
+
